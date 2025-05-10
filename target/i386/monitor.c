@@ -248,21 +248,22 @@ void hmp_info_tlb(Monitor *mon, const QDict *qdict)
 }
 
 static void mem_print(Monitor *mon, CPUArchState *env,
-                      hwaddr *pstart, int *plast_prot,
-                      hwaddr end, int prot)
+                      hwaddr *pstart, uint64_t *plast_prot,
+                      hwaddr end, uint64_t prot)
 {
-    int prot1;
+    uint64_t prot1;
     prot1 = *plast_prot;
     if (prot != prot1) {
         if (*pstart != -1) {
             monitor_printf(mon, HWADDR_FMT_plx "-" HWADDR_FMT_plx " "
-                           HWADDR_FMT_plx " %c%c%c\n",
+                           HWADDR_FMT_plx " %c%c%c%c\n",
                            addr_canonical(env, *pstart),
                            addr_canonical(env, end),
                            addr_canonical(env, end - *pstart),
                            prot1 & PG_USER_MASK ? 'u' : '-',
                            'r',
-                           prot1 & PG_RW_MASK ? 'w' : '-');
+                           prot1 & PG_RW_MASK ? 'w' : '-',
+                           prot1 & PG_NX_MASK ? '-' : 'x');
         }
         if (prot != 0)
             *pstart = end;
@@ -275,7 +276,7 @@ static void mem_print(Monitor *mon, CPUArchState *env,
 static void mem_info_32(Monitor *mon, CPUArchState *env)
 {
     unsigned int l1, l2;
-    int prot, last_prot;
+    uint64_t prot, last_prot;
     uint32_t pgd, pde, pte;
     hwaddr start, end;
 
@@ -316,7 +317,7 @@ static void mem_info_32(Monitor *mon, CPUArchState *env)
 static void mem_info_pae32(Monitor *mon, CPUArchState *env)
 {
     unsigned int l1, l2, l3;
-    int prot, last_prot;
+    uint64_t prot, last_prot;
     uint64_t pdpe, pde, pte;
     uint64_t pdp_addr, pd_addr, pt_addr;
     hwaddr start, end;
@@ -372,7 +373,7 @@ static void mem_info_pae32(Monitor *mon, CPUArchState *env)
 #ifdef TARGET_X86_64
 static void mem_info_la48(Monitor *mon, CPUArchState *env)
 {
-    int prot, last_prot;
+    uint64_t prot, last_prot;
     uint64_t l1, l2, l3, l4;
     uint64_t pml4e, pdpe, pde, pte;
     uint64_t pml4_addr, pdp_addr, pd_addr, pt_addr, start, end;
@@ -395,6 +396,7 @@ static void mem_info_la48(Monitor *mon, CPUArchState *env)
                         prot = pdpe & (PG_USER_MASK | PG_RW_MASK |
                                        PG_PRESENT_MASK);
                         prot &= pml4e;
+                        prot |= (pdpe | pml4e) & PG_NX_MASK;
                         mem_print(mon, env, &start, &last_prot, end, prot);
                     } else {
                         pd_addr = pdpe & 0x3fffffffff000ULL;
@@ -407,6 +409,7 @@ static void mem_info_la48(Monitor *mon, CPUArchState *env)
                                     prot = pde & (PG_USER_MASK | PG_RW_MASK |
                                                   PG_PRESENT_MASK);
                                     prot &= pml4e & pdpe;
+                                    prot |= (pde | pml4e | pdpe) & PG_NX_MASK;
                                     mem_print(mon, env, &start,
                                               &last_prot, end, prot);
                                 } else {
@@ -422,6 +425,7 @@ static void mem_info_la48(Monitor *mon, CPUArchState *env)
                                             prot = pte & (PG_USER_MASK | PG_RW_MASK |
                                                           PG_PRESENT_MASK);
                                             prot &= pml4e & pdpe & pde;
+                                            prot |= (pte | pml4e | pdpe | pde) & PG_NX_MASK;
                                         } else {
                                             prot = 0;
                                         }
@@ -452,7 +456,7 @@ static void mem_info_la48(Monitor *mon, CPUArchState *env)
 
 static void mem_info_la57(Monitor *mon, CPUArchState *env)
 {
-    int prot, last_prot;
+    uint64_t prot, last_prot;
     uint64_t l0, l1, l2, l3, l4;
     uint64_t pml5e, pml4e, pdpe, pde, pte;
     uint64_t pml5_addr, pml4_addr, pdp_addr, pd_addr, pt_addr, start, end;
@@ -496,6 +500,7 @@ static void mem_info_la57(Monitor *mon, CPUArchState *env)
                     prot = pdpe & (PG_USER_MASK | PG_RW_MASK |
                             PG_PRESENT_MASK);
                     prot &= pml5e & pml4e;
+                    prot |= (pdpe | pml5e | pml4e) & PG_NX_MASK;
                     mem_print(mon, env, &start, &last_prot, end, prot);
                     continue;
                 }
@@ -515,6 +520,7 @@ static void mem_info_la57(Monitor *mon, CPUArchState *env)
                         prot = pde & (PG_USER_MASK | PG_RW_MASK |
                                 PG_PRESENT_MASK);
                         prot &= pml5e & pml4e & pdpe;
+                        prot |= (pde | pml5e | pml4e | pdpe) & PG_NX_MASK;
                         mem_print(mon, env, &start, &last_prot, end, prot);
                         continue;
                     }
@@ -529,6 +535,7 @@ static void mem_info_la57(Monitor *mon, CPUArchState *env)
                             prot = pte & (PG_USER_MASK | PG_RW_MASK |
                                     PG_PRESENT_MASK);
                             prot &= pml5e & pml4e & pdpe & pde;
+                            prot |= (pte | pml5e | pml4e | pdpe | pde) & PG_NX_MASK;
                         } else {
                             prot = 0;
                         }
